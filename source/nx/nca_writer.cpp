@@ -238,37 +238,13 @@ public:
      u64 processChunk(const  u8* ptr, u64 sz)
      {
           ZSTD_inBuffer input = { ptr, sz, 0 };
-          ZSTD_outBuffer output = { buffOut, buffOutSize, 0 };
-          m_deflateBuffer.resize(sz);
-          m_deflateBuffer.resize(0);
-
-          while (input.pos < input.size || output.pos > 0)
+          while (input.pos < input.size)
           {
-               size_t const ret = ZSTD_decompressStream(dctx, &output, &input);
-
-               if (ZSTD_isError(ret))
-               {
-                    LOG_DEBUG("%s\n", ZSTD_getErrorName(ret));
-                    return false;
-               }
-
-               append(m_deflateBuffer, (const u8*)buffOut, output.pos);
-               output.pos = 0;
-
-               if (m_deflateBuffer.size() >= 0x1000000) // 16 MB
-               {
-                    encrypt(m_deflateBuffer.data(), m_deflateBuffer.size(), m_offset);
-
-                    flush();
-               }
-
-          }
-
-          if (m_deflateBuffer.size())
-          {
-               encrypt(m_deflateBuffer.data(), m_deflateBuffer.size(), m_offset);
-
-               flush();
+               ZSTD_outBuffer output = { buffOut, buffOutSize, 0 };
+               ZSTD_decompressStream(dctx, &output, &input);
+               encrypt((const u8*)buffOut, output.pos, m_offset);
+               m_contentStorage->WritePlaceholder(*(NcmPlaceHolderId*)&m_ncaId, m_offset, buffOut, output.pos);
+               m_offset += output.pos;
           }
           return 1;
      }
@@ -316,23 +292,8 @@ public:
 
           while (sz)
           {
-               if (m_buffer.size() + sz >= 0x1000000)
-               {
-                    u64 chunk = 0x1000000 - m_buffer.size();
-                    append(m_buffer, ptr, chunk);
-
-                    processChunk(m_buffer.data(), m_buffer.size());
-                    m_buffer.resize(0);
-
-                    sz -= chunk;
-                    ptr += chunk;
-               }
-               else
-               {
-                    append(m_buffer, ptr, sz);
-                    sz = 0;
-               }
-
+               append(m_buffer, ptr, sz);
+               sz = 0;
           }
 
           return sz;
