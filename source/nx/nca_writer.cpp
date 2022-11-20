@@ -172,24 +172,7 @@ public:
 
      bool close()
      {
-          processChunk(true);
-          flush();
-          return true;
-     }
-
-     bool flush()
-     {
-          if(!isOpen())
-          {
-               return false;
-          }
-
-          if (m_deflateBuffer.size())
-          {
-               m_contentStorage->WritePlaceholder(*(NcmPlaceHolderId*)&m_ncaId, m_offset, m_deflateBuffer.data(), m_deflateBuffer.size());
-               m_offset += m_deflateBuffer.size();
-               m_deflateBuffer.resize(0);
-          }
+          processChunk(m_buffer, true);
           return true;
      }
 
@@ -228,22 +211,22 @@ public:
           return true;
      }
 
-     void processChunk(bool finalize)
+     void processChunk(std::vector<u8>& inputBuffer, bool finalize)
      {
-          if(m_buffer.size() == 0) return;
-          u64 bufferSize = m_buffer.size();
+          if (inputBuffer.size() == 0) return;
+          u64 bufferSize = inputBuffer.size();
           u64 i = 0;
           while (i < bufferSize) {
                u64 inSize = dStreamInSize;
-               if(dStreamInSize > bufferSize - i) {
+               if (dStreamInSize > bufferSize - i) {
                     inSize = bufferSize - i;
                     if (!finalize) {
-                         memcpy(m_buffer.data(), m_buffer.data() + i, inSize);
-                         m_buffer.resize(inSize);
+                         memcpy(inputBuffer.data(), inputBuffer.data() + i, inSize);
+                         inputBuffer.resize(inSize);
                          return;
                     }
                }
-               ZSTD_inBuffer input = { m_buffer.data() + i, inSize, 0 };
+               ZSTD_inBuffer input = { inputBuffer.data() + i, inSize, 0 };
                ZSTD_outBuffer output = { buffOut, buffOutSize, 0 };
                size_t const ret = ZSTD_decompressStream(dctx, &output, &input);
                if (ZSTD_isError(ret))
@@ -256,7 +239,7 @@ public:
                m_offset += output.pos;
                i += input.pos;
           }
-          m_buffer.resize(0);
+          inputBuffer.resize(0);
      }
 
      u64 write(const  u8* ptr, u64 sz) override
@@ -302,7 +285,7 @@ public:
 
           append(m_buffer, ptr, sz);
           sz = 0;
-          processChunk(false);
+          processChunk(m_buffer, false);
 
           return sz;
      }
@@ -311,11 +294,8 @@ public:
      size_t const buffOutSize = ZSTD_DStreamOutSize();
 
      void* buffOut = NULL;
-
      ZSTD_DCtx* dctx = NULL;
-
      std::vector<u8> m_buffer;
-     std::vector<u8> m_deflateBuffer;
 
      bool m_sectionsInitialized = false;
 
