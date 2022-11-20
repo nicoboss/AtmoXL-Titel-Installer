@@ -146,9 +146,7 @@ class NczBodyWriter : public NcaBodyWriter
 public:
      NczBodyWriter(const NcmContentId& ncaId, u64 offset, std::shared_ptr<nx::ncm::ContentStorage>& contentStorage) : NcaBodyWriter(ncaId, offset, contentStorage)
      {
-          buffIn = malloc(buffInSize);
           buffOut = malloc(buffOutSize);
-
           dctx = ZSTD_createDCtx();
      }
 
@@ -174,13 +172,7 @@ public:
 
      bool close()
      {
-          u64 bufferSize = m_buffer.size();
-          u64 i = 0;
-          while (i < bufferSize) {
-               u64 inSize = std::min(buffInSize, bufferSize - i);
-               memcpy(buffIn, m_buffer.data() + i, inSize);
-               i += processChunk((const u8*)buffIn, inSize);
-          }
+          processChunk(true);
           flush();
           return true;
      }
@@ -236,15 +228,35 @@ public:
           return true;
      }
 
-     u64 processChunk(const u8* ptr, u64 sz)
+     void processChunk(bool finalize)
      {
-          ZSTD_inBuffer input = { ptr, sz, 0 };
-          ZSTD_outBuffer output = { buffOut, buffOutSize, 0 };
-          ZSTD_decompressStream(dctx, &output, &input);
-          encrypt((const u8*)buffOut, output.pos, m_offset);
-          m_contentStorage->WritePlaceholder(*(NcmPlaceHolderId*)&m_ncaId, m_offset, buffOut, output.pos);
-          m_offset += output.pos;
-          return input.pos;
+          if(m_buffer.size() == 0) return;
+          u64 bufferSize = m_buffer.size();
+          u64 i = 0;
+          while (i < bufferSize) {
+               u64 inSize = dStreamInSize;
+               if(dStreamInSize > bufferSize - i) {
+                    inSize = bufferSize - i;
+                    if (!finalize) {
+                         memcpy(m_buffer.data(), m_buffer.data() + i, inSize);
+                         m_buffer.resize(inSize);
+                         return;
+                    }
+               }
+               ZSTD_inBuffer input = { m_buffer.data() + i, inSize, 0 };
+               ZSTD_outBuffer output = { buffOut, buffOutSize, 0 };
+               size_t const ret = ZSTD_decompressStream(dctx, &output, &input);
+               if (ZSTD_isError(ret))
+               {
+                    LOG_DEBUG("%s\n", ZSTD_getErrorName(ret));
+                    return;
+               }
+               encrypt((const u8*)buffOut, output.pos, m_offset);
+               m_contentStorage->WritePlaceholder(*(NcmPlaceHolderId*)&m_ncaId, m_offset, buffOut, output.pos);
+               m_offset += output.pos;
+               i += input.pos;
+          }
+          m_buffer.resize(0);
      }
 
      u64 write(const  u8* ptr, u64 sz) override
@@ -288,19 +300,16 @@ public:
                }
           }
 
-          while (sz)
-          {
-               append(m_buffer, ptr, sz);
-               sz = 0;
-          }
+          append(m_buffer, ptr, sz);
+          sz = 0;
+          processChunk(false);
 
           return sz;
      }
 
-     size_t const buffInSize = ZSTD_DStreamInSize();
+     size_t const dStreamInSize = ZSTD_DStreamInSize();
      size_t const buffOutSize = ZSTD_DStreamOutSize();
 
-     void* buffIn = NULL;
      void* buffOut = NULL;
 
      ZSTD_DCtx* dctx = NULL;
