@@ -246,6 +246,16 @@ public:
                u64 inSize = dStreamInSize;
                if (dStreamInSize > bufferSize - i) {
                     inSize = bufferSize - i;
+                    if (!finalize) {
+                         if (m_deflateBuffer.size())
+                         {
+                              encrypt(m_deflateBuffer.data(), m_deflateBuffer.size(), m_offset);
+                              flush();
+                         }
+                         memcpy(inputBuffer.data(), inputBuffer.data() + i, inSize);
+                         inputBuffer.resize(inSize);
+                         return 1;
+                    }
                }
                ZSTD_inBuffer input = { inputBuffer.data() + i, inSize, 0 };
                ZSTD_outBuffer output = { buffOut, buffOutSize, 0 };
@@ -258,7 +268,6 @@ public:
                }
 
                append(m_deflateBuffer, (const u8*)buffOut, output.pos);
-               output.pos = 0;
 
                if (m_deflateBuffer.size() >= 0x1000000) // 16 MB
                {
