@@ -175,10 +175,11 @@ public:
      bool close()
      {
           u64 bufferSize = m_buffer.size();
-          for (u64 i = 0; i < bufferSize; i += buffInSize) {
+          u64 i = 0;
+          while (i < bufferSize) {
                u64 inSize = std::min(buffInSize, bufferSize - i);
                memcpy(buffIn, m_buffer.data() + i, inSize);
-               processChunk((const u8*)buffIn, inSize);
+               i += processChunk((const u8*)buffIn, inSize);
           }
           flush();
           return true;
@@ -238,15 +239,12 @@ public:
      u64 processChunk(const u8* ptr, u64 sz)
      {
           ZSTD_inBuffer input = { ptr, sz, 0 };
-          while (input.pos < input.size)
-          {
-               ZSTD_outBuffer output = { buffOut, buffOutSize, 0 };
-               ZSTD_decompressStream(dctx, &output, &input);
-               encrypt((const u8*)buffOut, output.pos, m_offset);
-               m_contentStorage->WritePlaceholder(*(NcmPlaceHolderId*)&m_ncaId, m_offset, buffOut, output.pos);
-               m_offset += output.pos;
-          }
-          return 1;
+          ZSTD_outBuffer output = { buffOut, buffOutSize, 0 };
+          ZSTD_decompressStream(dctx, &output, &input);
+          encrypt((const u8*)buffOut, output.pos, m_offset);
+          m_contentStorage->WritePlaceholder(*(NcmPlaceHolderId*)&m_ncaId, m_offset, buffOut, output.pos);
+          m_offset += output.pos;
+          return input.pos;
      }
 
      u64 write(const  u8* ptr, u64 sz) override
