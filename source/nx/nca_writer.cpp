@@ -172,7 +172,29 @@ public:
 
      bool close()
      {
-          processChunk(m_buffer, true);
+          if (this->m_buffer.size())
+          {
+               processChunk(m_buffer, true);
+          }
+
+          flush();
+
+          return true;
+     }
+
+     bool flush()
+     {
+          if(!isOpen())
+          {
+               return false;
+          }
+
+          if (m_deflateBuffer.size())
+          {
+               m_contentStorage->WritePlaceholder(*(NcmPlaceHolderId*)&m_ncaId, m_offset, m_deflateBuffer.data(), m_deflateBuffer.size());
+               m_offset += m_deflateBuffer.size();
+               m_deflateBuffer.resize(0);
+          }
           return true;
      }
 
@@ -211,35 +233,55 @@ public:
           return true;
      }
 
-     void processChunk(std::vector<u8>& inputBuffer, bool finalize)
+     u64 processChunk(std::vector<u8>& inputBuffer, bool finalize)
      {
-          if (inputBuffer.size() == 0) return;
+          if (inputBuffer.size() == 0) return 1;
           u64 bufferSize = inputBuffer.size();
+          m_deflateBuffer.resize(bufferSize);
+          m_deflateBuffer.resize(0);
+
           u64 i = 0;
-          while (i < bufferSize) {
+          while (i < bufferSize)
+          {
                u64 inSize = dStreamInSize;
                if (dStreamInSize > bufferSize - i) {
                     inSize = bufferSize - i;
                     if (!finalize) {
                          memcpy(inputBuffer.data(), inputBuffer.data() + i, inSize);
                          inputBuffer.resize(inSize);
-                         return;
+                         return 1;
                     }
                }
                ZSTD_inBuffer input = { inputBuffer.data() + i, inSize, 0 };
                ZSTD_outBuffer output = { buffOut, buffOutSize, 0 };
                size_t const ret = ZSTD_decompressStream(dctx, &output, &input);
+
                if (ZSTD_isError(ret))
                {
                     LOG_DEBUG("%s\n", ZSTD_getErrorName(ret));
-                    return;
+                    return false;
                }
-               encrypt((const u8*)buffOut, output.pos, m_offset);
-               m_contentStorage->WritePlaceholder(*(NcmPlaceHolderId*)&m_ncaId, m_offset, buffOut, output.pos);
-               m_offset += output.pos;
+
+               append(m_deflateBuffer, (const u8*)buffOut, output.pos);
+
+               if (m_deflateBuffer.size() >= 0x1000000) // 16 MB
+               {
+                    encrypt(m_deflateBuffer.data(), m_deflateBuffer.size(), m_offset);
+
+                    flush();
+               }
+
                i += input.pos;
+
           }
-          inputBuffer.resize(0);
+
+          if (m_deflateBuffer.size())
+          {
+               encrypt(m_deflateBuffer.data(), m_deflateBuffer.size(), m_offset);
+
+               flush();
+          }
+          return 1;
      }
 
      u64 write(const  u8* ptr, u64 sz) override
@@ -310,8 +352,11 @@ public:
      size_t const buffOutSize = ZSTD_DStreamOutSize();
 
      void* buffOut = NULL;
+
      ZSTD_DCtx* dctx = NULL;
+
      std::vector<u8> m_buffer;
+     std::vector<u8> m_deflateBuffer;
 
      bool m_sectionsInitialized = false;
 
