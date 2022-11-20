@@ -235,14 +235,20 @@ public:
 
      u64 processChunk(std::vector<u8>& inputBuffer, bool finalize)
      {
+          if (inputBuffer.size() == 0) return 1;
           u64 bufferSize = inputBuffer.size();
-          ZSTD_inBuffer input = { inputBuffer.data(), bufferSize, 0 };
-          ZSTD_outBuffer output = { buffOut, buffOutSize, 0 };
           m_deflateBuffer.resize(bufferSize);
           m_deflateBuffer.resize(0);
 
-          while (input.pos < input.size || output.pos > 0)
+          u64 i = 0;
+          while (i < bufferSize)
           {
+               u64 inSize = dStreamInSize;
+               if (dStreamInSize > bufferSize - i) {
+                    inSize = bufferSize - i;
+               }
+               ZSTD_inBuffer input = { inputBuffer.data() + i, inSize, 0 };
+               ZSTD_outBuffer output = { buffOut, buffOutSize, 0 };
                size_t const ret = ZSTD_decompressStream(dctx, &output, &input);
 
                if (ZSTD_isError(ret))
@@ -260,6 +266,8 @@ public:
 
                     flush();
                }
+
+               i += input.pos;
 
           }
 
