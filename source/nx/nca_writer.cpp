@@ -174,13 +174,13 @@ public:
 
      bool close()
      {
-          if (this->m_buffer.size())
-          {
-               processChunk(m_buffer.data(), m_buffer.size());
+          u64 bufferSize = m_buffer.size();
+          for (u64 i = 0; i < bufferSize; i += buffInSize) {
+               u64 inSize = std::min(buffInSize, bufferSize - i);
+               memcpy(buffIn, m_buffer.data() + i, inSize);
+               processChunk((const u8*)buffIn, inSize);
           }
-
           flush();
-
           return true;
      }
 
@@ -235,7 +235,7 @@ public:
           return true;
      }
 
-     u64 processChunk(const  u8* ptr, u64 sz)
+     u64 processChunk(const u8* ptr, u64 sz)
      {
           ZSTD_inBuffer input = { ptr, sz, 0 };
           while (input.pos < input.size)
