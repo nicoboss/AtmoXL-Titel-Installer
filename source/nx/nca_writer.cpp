@@ -283,9 +283,25 @@ public:
                }
           }
 
-          append(m_buffer, ptr, sz);
-          sz = 0;
-          processChunk(m_buffer, false);
+          while (sz)
+          {
+               if (m_buffer.size() + sz >= 0x1000000)
+               {
+                    u64 chunk = 0x1000000 - m_buffer.size();
+                    append(m_buffer, ptr, chunk);
+
+                    processChunk(m_buffer, false);
+
+                    sz -= chunk;
+                    ptr += chunk;
+               }
+               else
+               {
+                    append(m_buffer, ptr, sz);
+                    sz = 0;
+               }
+
+          }
 
           return sz;
      }
