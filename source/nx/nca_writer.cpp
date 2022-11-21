@@ -179,6 +179,7 @@ public:
                processChunk(m_buffer.data(), m_buffer.size());
           }
 
+          encrypt(m_deflateBuffer.data(), m_deflateBuffer.size(), m_offset);
           flush();
 
           return true;
@@ -237,8 +238,6 @@ public:
 
      u64 processChunk(const u8* ptr, u64 sz)
      {
-          m_deflateBuffer.resize(sz);
-          m_deflateBuffer.resize(0);
           while(sz > 0)
           {
                const size_t readChunkSz = std::min(sz, buffInSize);
@@ -277,12 +276,6 @@ public:
 
                sz -= readChunkSz;
                ptr += readChunkSz;
-          }
-
-          if (m_deflateBuffer.size())
-          {
-               encrypt(m_deflateBuffer.data(), m_deflateBuffer.size(), m_offset);
-               flush();
           }
 
           return 1;
